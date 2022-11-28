@@ -1,7 +1,8 @@
 import ast
 from _ast import *
 from munkres import Munkres
-
+global const
+const =9999999999
 class plag_checker:
     def __init__(self, path1=None, path2=None) -> None:
         self.code_1 = None
@@ -18,6 +19,17 @@ class plag_checker:
                         If,
                         ClassDef,
                         ]
+        self.important_weights ={
+                        ClassDef:1.2,
+                        Module:0.8,
+                        While:1,
+                        For:1,
+                        comprehension:1,
+                        Return:0.3,
+                        Import:0.5,
+                        FunctionDef:1.5,
+                        If:0.5,
+        }
         self.leaf_1 = None
         self.leaf_2 = None
         self.leaf_of_leaf_1 = None
@@ -27,8 +39,6 @@ class plag_checker:
 
     def load_scripts(self,path1,path2):
 
-        # self.path1 = "C:/Users/valc2/Documents/GitHub/Simple-plagiarism-checker/actividad5.py"
-        # self.path2 = "C:/Users/valc2/Documents/GitHub/Simple-plagiarism-checker/actividad5-c.py"
         self.path1 = path1
         self.path2 = path2
 
@@ -52,188 +62,141 @@ class plag_checker:
         self.leaf_2 = self.sub_tree_2.copy()
     
 
-    def compare_ASTs (self, ast_a : AST , ast_b : AST , reorder_depth : int ) -> int :#done
-        children_a = list ( ast . iter_child_nodes ( ast_a ))
-        children_b = list ( ast . iter_child_nodes ( ast_b ))
-        if (( type ( ast_a ) == type ( ast_b ))
-                and len ( list ( children_a )) == 0
-                and len ( list ( children_b )) == 0) :
-            return 1
-        
-        if (( type ( ast_a ) != type ( ast_b ))
-                or ( len ( children_a ) != len ( children_b )) ):
+    def compare_tree (self, tree1=None, tree2=None, k=None):#done
+        self.leaf_of_leaf_1 = self.get_leaf(tree1)
+        self.leaf_of_leaf_2 = self.get_leaf(tree2)
+        size_a = len(self.leaf_of_leaf_1)
+        size_b = len(self.leaf_of_leaf_2)
+        itera = zip ( self.leaf_of_leaf_1 , self.leaf_of_leaf_2 )
+        if type ( tree1 ) != type ( tree2 ):
             return 0
-
-        if reorder_depth == 0:
-            match_index = sum ( map ( lambda pairs : self.compare_ASTs (
-                pairs [0] , pairs [1] , reorder_depth ) ,
-                zip ( children_a , children_b ) ))
-            return match_index + 1
-        
-        elif reorder_depth > 0:
-            match_index = self.reorder_children_compare (
-                ast_a , ast_b , reorder_depth - 1)
-            return match_index + 1
-
-    def reorder_children_compare (self, ast_a : AST , ast_b : AST ,reorder_depth : int ) -> int :
-        comparison_matrix = []
-        cost_matrix = []
-        best_match_value = 0
-        children_a = list ( ast . iter_child_nodes ( ast_a ))
-        children_b = list ( ast . iter_child_nodes ( ast_b ))
-        if len ( children_a ) <= 1 or len ( children_b ) <= 1:
-            for child_a in children_a :
-                for child_b in children_b :
-                    best_match_value += self.compare_ASTs( child_a, child_b , reorder_depth )
+        elif size_a!=size_b:
+            return 0
         else:
-            for child_a in children_a :
-                row = []
-                cost_row = []
-                for child_b in children_b :
-                    similarity = self.compare_ASTs ( child_a , child_b , reorder_depth )
-                    row.append( similarity )
-                    cost_row . append (10000000 - similarity )
-                comparison_matrix . append ( row )
-                cost_matrix . append ( cost_row )
-            m = Munkres()
-            indices = m. compute ( cost_matrix )
-            for row , col in indices :
-                best_match_value += comparison_matrix [ row ][ col ]
-        return best_match_value
+            if size_a ==0 and size_b ==0:
+                return 1
+
+        if k == 0:
+            pares = map (lambda sub_tree : self.compare_tree(sub_tree [0], sub_tree [1], k) ,itera)
+            pares=sum(pares)
+        
+        elif k > 0:
+            pares = self.compare_leaf(tree1 , tree2 , k - 1)
+            
+        return pares +1
+
+    def compare_tree2(self,tree1,tree2,k): #done
+        compare_list = []
+        weight_list = []
+        global const
+        for node_1 in tree1:
+            x = []
+            cost_x = []
+            for node_2 in tree2 :
+                result = self.compare_tree ( node_1 , node_2 , k )
+                x.append(result)
+                cost_x.append(const-result)
+            compare_list.append(x)
+            weight_list.append(cost_x)
+        return compare_list, weight_list
+
+    def compare_leaf(self, tree1, tree2, k):
+        compare_list = []
+        weight_list = []
+        
+        leaf_depth_1 = self.get_leaf(tree1)
+        leaf_depth_2 = self.get_leaf(tree2)
+        size_a = len(leaf_depth_1)
+        size_b = len(leaf_depth_2)
+
+        compare_list, weight_list = self.compare_tree2(leaf_depth_1,leaf_depth_2,k)
+
+        while size_a<=1 or size_b<=1:
+            count = 0
+            for node_1 in leaf_depth_1 :
+                for node_2 in leaf_depth_2 :
+                    count += self.compare_tree( node_1, node_2 , k )
+            return count
+
+        total_cost = self.hungarian(weight_list)
+        count = 0
+        for x , y in total_cost :
+            count += compare_list[x][y]
+        return count
 
     def get_leaf(self,tree):
-        return list[ast.iter_child_nodes(tree)] #posible fallo por corchetes
+        return list(ast.iter_child_nodes(tree))
 
-    def compare_subtrees (self, sig_subtrees_p1 : list , sig_subtrees_p2 : list , reorder_depth : int ) -> tuple :
-        comparison_matrix = []
-        cost_matrix = []
-        best_match = []
-        best_match_value = 0
-        best_match_weight = 0
-        children_a = sig_subtrees_p1 . copy ()
-        children_b = sig_subtrees_p2 . copy ()
+    def hungarian(self,weight_list):
+        hung=Munkres()
+        return hung.compute(weight_list)
 
-        if len ( children_a ) <= 1 or len ( children_b ) <= 1:
-            for child_a in children_a:
-                best_match += [ child_a ]
-                for child_b in children_b :
-                    best_match_value += self.compare_ASTs ( child_a ,child_b , reorder_depth )
-                    best_match += [ child_b ]
-        else :
-            for child_a in children_a :
-                row = []
-                cost_row = []
-                for child_b in children_b :
-                    similarity = self.compare_ASTs ( child_a , child_b , reorder_depth )
-                    row . append ( similarity )
-                    cost_row . append (10000000 - similarity )
 
-                comparison_matrix . append ( row )
-                cost_matrix . append ( cost_row )
+    def calculate_sim(self,tree_1,tree_2,last_weight,result_2):
+        all_subtrees_weight = (sum(map(lambda total: self.pondera(len(list(ast.walk( total))),total),tree_1 ))+ sum(map(lambda tree : self.pondera(len(list(ast.walk(tree))),tree ) ,tree_2 )))
+        result = last_weight / all_subtrees_weight
+        result = round ( result*2 , 4) , result_2
+        return result
 
-            m = Munkres ()
-            indices = m. compute ( cost_matrix )
 
-            for row , col in indices :
-                best_match_weight += self.apply_weights_to_subtrees_mult (
-                    comparison_matrix [ row ][ col ] , sig_subtrees_p1 [ row ] ,
-                    sig_subtrees_p2 [ col ])
-                best_match += [ sig_subtrees_p1 [ row ] , sig_subtrees_p2 [ col ]]
+    def Abstract_S_T (self, tree1, tree2, k):#done
+        all_nodes_1 = tree1
+        all_nodes_2 = tree2#copy
+        size_a = len(all_nodes_1)
+        size_b = len(all_nodes_2)
+        compare_list=[]
+        weight_list=[]
+        result_2=[]
+        tmp=0
+        count=0
+        last_weight=0
+        while size_a<=1 or size_b<=1:
+            for node_1 in all_nodes_1:
+                result_2 += [ node_1 ]
+                for node_2 in all_nodes_2 :
+                    count += self.compare_tree ( node_1 ,node_2 , k )
+                    result_2 += [ node_2 ]
+            tmp=self.calculate_sim(tree1,tree2,last_weight,result_2)
+            return tmp[0]
 
-        all_subtrees_weight = (sum ( map ( lambda tree : self.apply_weights_to_subtrees ( self.get_num_nodes ( tree ) , tree ) , sig_subtrees_p1 ))
-            + sum( map ( lambda tree : self.apply_weights_to_subtrees ( self.get_num_nodes ( tree ) ,
-            tree ) ,
-            sig_subtrees_p2 )))
+        for node_1 in all_nodes_1 :
+            x = []
+            cost_x = []
+            for node_2 in all_nodes_2 :
+                result = self.compare_tree( node_1 , node_2 , k )
+                x.append( result )
+                cost_x.append(10000000-result )
 
-        similarity = 2 * best_match_weight / all_subtrees_weight
-        return round ( similarity , 4) , best_match
+            compare_list.append( x )
+            weight_list.append( cost_x )
 
-    def get_num_nodes (self, root : AST ) -> int :
-        """ Find the number of nodes for a given tree .
-        197
-        Args :
-        root : The root of the tree whose size we want .
-        200
-        Returns :
-        The number of nodes in the tree .
-        """
-        return len ( list ( ast . walk ( root )))
+        total_cost = self.hungarian(weight_list)
 
-    def apply_weights_to_subtrees (self, weight : float , subtree : AST ) -> float :
-        """ Apply weights to subtrees according to the time por their roots .
-        209
-        Args :
-        weight : The number of nodes in the subtree .
-        subtree : The subtree .
-        213
-        Returns :
-        The weighed weight of the tree .
-        """
-        new_weight = weight
-        if isinstance ( subtree , Import ):
-            new_weight *= 0.3   
-        elif isinstance ( subtree , Module ) :
-            new_weight *= 1
-        elif isinstance ( subtree , FunctionDef ) :
-            new_weight *= 1.2
-        elif isinstance ( subtree , If ):
-            new_weight *= 0.5
-        elif isinstance ( subtree , ClassDef ):
-            new_weight *= 1
-        elif isinstance ( subtree , While ):
-            new_weight *= 1
-        elif isinstance ( subtree , For ):
-            new_weight *= 1
-        elif isinstance ( subtree , comprehension ):
-            new_weight *= 1
-        elif isinstance ( subtree , Return ) :
-            new_weight *= 1
-        return new_weight
+        for x, y in total_cost :
+            tmp = self.pondera (compare_list[x][y], tree1[x])
+            tmp2= self.pondera (compare_list[x][y], tree2[y])
+            last_weight += (tmp+tmp2)/2
+            result_2 += [tree1[x] ,tree2[y]]
 
-    def apply_weights_to_subtrees_mult (self, weight : float , ast_1 : AST , ast_2 : AST ) -> float :
-        if weight == 0:
-            return 0
-        else :
-            return (( self.apply_weights_to_subtrees ( weight , ast_1 ) + self.apply_weights_to_subtrees ( weight , ast_2 ) ) / 2)
+        tmp=self.calculate_sim(tree1,tree2,last_weight,result_2)
+        return tmp[0]
 
-    def compare_many (self, programs : list ) -> list :
-        """ Compare all of the programs in the list .
 
-        Args :
-        programs : A list of strings with python programs .
+    def pondera (self, value, tree): #done
+        for component in self.important:
+            if isinstance(tree, component):
+                w=self.important_weights[component]
+        return value * w
 
-        Returns :
-        A matrix with the similarity rating of between all the programs .
-        """
-        tree_list = list ( map(
-            lambda prog : self.get_significant_subtrees ( ast . parse ( prog )) ,
-            programs ) )
 
-        matrix = []
-        for program_1_tree_num in range (0 , len ( tree_list )):
-            for program_2_tree_num in range ( program_1_tree_num , len( tree_list )):
-                if program_1_tree_num == program_2_tree_num :
-                    continue
-                print(f"comparing { program_1_tree_num } to { program_2_tree_num }")
-
-                subtrees1 = tree_list [ program_1_tree_num ]
-                subtrees2 = tree_list [ program_2_tree_num ]
-
-                result = self.compare_subtrees ( subtrees1 , subtrees2 , 1000) [0]
-
-                matrix . append (( program_1_tree_num , program_2_tree_num , result ))
-                matrix . append (( program_2_tree_num , program_1_tree_num , result ))
-
-        return matrix
-
-    def main(self,path1,path2):
+    def run(self,path1,path2):
 
         self.clean()
         self.load_scripts(path1,path2)
         self.sub_tree()
-        similarity = self.compare_subtrees ( self.sub_tree_1 , self.sub_tree_2 , 10000) [0]
-        print(f"The index of similarity between { path1 } and { path2 } is: { similarity }")
-        return similarity
+        result = self.Abstract_S_T ( self.sub_tree_1 , self.sub_tree_2 , 999999)
+        print(result)
+        return result
     
     def clean(self):
         self.code_1 = None
@@ -249,4 +212,4 @@ if __name__ == "__main__":
     start=plag_checker()
     path1="C:/Users/valc2/Documents/GitHub/Simple-plagiarism-checker/actividad5.py"
     path2 = "C:/Users/valc2/Documents/GitHub/Simple-plagiarism-checker/actividad5-c.py"
-    start.main(path1,path2)
+    start.run(path1,path2)

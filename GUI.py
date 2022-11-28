@@ -24,7 +24,7 @@ class GUI(plag_checker):
     
     def run_plag_check(self):
         if self.label_1!="" and self.label_2!="":
-            score_plag = self.main(self.label_1,self.label_2) * 100
+            score_plag = self.run(self.label_1,self.label_2) * 100
             score_plag = round(score_plag,4)
             if score_plag <= 100.0 and score_plag>=90:
                 color="red"
